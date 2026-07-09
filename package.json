@@ -1,9 +1,9 @@
 {
-  "name": "@agentclientprotocol/claude-agent-acp",
+  "name": "@qsoyq/claude-agent-acp",
   "publishConfig": {
     "access": "public"
   },
-  "version": "0.57.0",
+  "version": "0.57.0-1",
   "description": "An ACP-compatible coding agent powered by the Claude Agent SDK (TypeScript)",
   "main": "dist/lib.js",
   "types": "dist/lib.d.ts",
