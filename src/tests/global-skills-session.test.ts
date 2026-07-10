@@ -89,6 +89,22 @@ describe("global skills session plugin", () => {
     expect(capturedOptions[0].plugins).toEqual([callerPlugin]);
   });
 
+  it("loads global skills created after ACP initialization but before session creation", async () => {
+    await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
+
+    const skillFile = path.join(configDirectory, "skills", "late-session-skill", "SKILL.md");
+    await fs.mkdir(path.dirname(skillFile), { recursive: true });
+    await fs.writeFile(skillFile, "# Late session skill\n", "utf8");
+
+    await agent.newSession({ cwd: process.cwd(), mcpServers: [] });
+
+    const bridge = capturedOptions[0].plugins?.[0];
+    expect(bridge).toMatchObject({ type: "local", skipMcpDiscovery: true });
+    await expect(
+      fs.readFile(path.join(bridge!.path, "skills", "late-session-skill", "SKILL.md"), "utf8"),
+    ).resolves.toBe("# Late session skill\n");
+  });
+
   it("appends one bridge to caller plugins and reuses it across sessions", async () => {
     const skillFile = path.join(configDirectory, "skills", "example-skill", "SKILL.md");
     await fs.mkdir(path.dirname(skillFile), { recursive: true });

@@ -30,6 +30,28 @@ describe("GlobalSkillsPluginBridge", () => {
     expect(logger.error).not.toHaveBeenCalled();
   });
 
+  it("retries when the global skills directory appears after an earlier miss", async () => {
+    const configDirectory = path.join(testDirectory, "config");
+    const skillFile = path.join(configDirectory, "skills", "late-skill", "SKILL.md");
+    const temporaryDirectory = path.join(testDirectory, "temporary");
+    await fs.mkdir(temporaryDirectory);
+    const bridge = new GlobalSkillsPluginBridge(configDirectory, logger, {
+      temporaryDirectory,
+    });
+
+    await expect(bridge.initialize()).resolves.toBeUndefined();
+
+    await fs.mkdir(path.dirname(skillFile), { recursive: true });
+    await fs.writeFile(skillFile, "# Late skill\n", "utf8");
+    const plugin = await bridge.initialize();
+
+    expect(plugin).toMatchObject({ type: "local", skipMcpDiscovery: true });
+    await expect(
+      fs.readFile(path.join(plugin!.path, "skills", "late-skill", "SKILL.md"), "utf8"),
+    ).resolves.toBe("# Late skill\n");
+    await bridge.dispose();
+  });
+
   it("creates a valid local plugin that exposes the global skills directory", async () => {
     const configDirectory = path.join(testDirectory, "custom-config");
     const skillsDirectory = path.join(configDirectory, "skills");

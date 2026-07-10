@@ -73,12 +73,20 @@ export class GlobalSkillsPluginBridge {
     if (this.disposed) {
       return Promise.resolve(undefined);
     }
-    this.pluginPromise ??= this.createPlugin().catch((error) => {
-      this.logger.error(
-        `Failed to create the global skills bridge for ${this.skillsDirectory}: ${describeError(error)}`,
-      );
-      return undefined;
-    });
+    this.pluginPromise ??= this.createPlugin()
+      .then((plugin) => {
+        if (!plugin) {
+          this.pluginPromise = undefined;
+        }
+        return plugin;
+      })
+      .catch((error) => {
+        this.logger.error(
+          `Failed to create the global skills bridge for ${this.skillsDirectory}: ${describeError(error)}`,
+        );
+        this.pluginPromise = undefined;
+        return undefined;
+      });
     return this.pluginPromise;
   }
 
