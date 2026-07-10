@@ -12,7 +12,7 @@ type BridgeLogger = {
 
 export type GlobalSkillsPluginBridgeOptions = {
   linkDirectory?: (target: string, linkPath: string, type: "dir" | "junction") => Promise<void>;
-  platform?: NodeJS.Platform;
+  platform?: typeof process.platform;
   temporaryDirectory?: string;
 };
 
@@ -53,7 +53,7 @@ export function mergeGlobalSkillsPlugin(
 export class GlobalSkillsPluginBridge {
   private readonly skillsDirectory: string;
   private readonly linkDirectory: NonNullable<GlobalSkillsPluginBridgeOptions["linkDirectory"]>;
-  private readonly platform: NodeJS.Platform;
+  private readonly platform: typeof process.platform;
   private readonly temporaryDirectory: string;
   private pluginPromise?: Promise<SdkPluginConfig | undefined>;
   private disposed = false;
@@ -63,7 +63,7 @@ export class GlobalSkillsPluginBridge {
     private readonly logger: BridgeLogger,
     options: GlobalSkillsPluginBridgeOptions = {},
   ) {
-    this.skillsDirectory = path.join(claudeConfigDirectory, "skills");
+    this.skillsDirectory = path.resolve(claudeConfigDirectory, "skills");
     this.linkDirectory = options.linkDirectory ?? fs.symlink;
     this.platform = options.platform ?? process.platform;
     this.temporaryDirectory = options.temporaryDirectory ?? os.tmpdir();
@@ -131,6 +131,7 @@ export class GlobalSkillsPluginBridge {
         this.logger.error(
           `Failed to link global skills into the temporary plugin; using a startup snapshot instead: ${describeError(error)}`,
         );
+        await fs.rm(pluginSkillsDirectory, { recursive: true, force: true });
         await fs.cp(this.skillsDirectory, pluginSkillsDirectory, {
           recursive: true,
           errorOnExist: true,
