@@ -75,13 +75,16 @@ describe("GlobalSkillsPluginBridge", () => {
     await expect(
       fs.readFile(path.join(plugin!.path, "skills", "example-skill", "SKILL.md"), "utf8"),
     ).resolves.toBe("# Example skill\n");
+    await expect(
+      fs.realpath(path.join(plugin!.path, "skills", "example-skill", "SKILL.md")),
+    ).resolves.not.toBe(await fs.realpath(skillFile));
 
     await bridge.dispose();
     await expect(fs.stat(plugin!.path)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(fs.readFile(skillFile, "utf8")).resolves.toBe("# Example skill\n");
   });
 
-  it("falls back to a copied snapshot when directory linking fails", async () => {
+  it("uses a startup snapshot instead of sharing source files", async () => {
     const configDirectory = path.join(testDirectory, "config");
     const skillFile = path.join(configDirectory, "skills", "fallback-skill", "SKILL.md");
     const temporaryDirectory = path.join(testDirectory, "temporary");
@@ -91,10 +94,6 @@ describe("GlobalSkillsPluginBridge", () => {
 
     const bridge = new GlobalSkillsPluginBridge(configDirectory, logger, {
       temporaryDirectory,
-      linkDirectory: async (_target, linkPath) => {
-        await fs.mkdir(linkPath);
-        throw new Error("links unavailable");
-      },
     });
     const plugin = await bridge.initialize();
 
@@ -102,34 +101,36 @@ describe("GlobalSkillsPluginBridge", () => {
     await expect(
       fs.readFile(path.join(plugin!.path, "skills", "fallback-skill", "SKILL.md"), "utf8"),
     ).resolves.toBe("# Fallback skill\n");
-    expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("using a startup snapshot"));
+
+    await fs.writeFile(skillFile, "# Updated source skill\n", "utf8");
+    await expect(
+      fs.readFile(path.join(plugin!.path, "skills", "fallback-skill", "SKILL.md"), "utf8"),
+    ).resolves.toBe("# Fallback skill\n");
 
     await bridge.dispose();
-    await expect(fs.readFile(skillFile, "utf8")).resolves.toBe("# Fallback skill\n");
+    await expect(fs.readFile(skillFile, "utf8")).resolves.toBe("# Updated source skill\n");
   });
 
-  it("requests a junction on Windows", async () => {
+  it("dereferences a symlinked global skills directory", async () => {
     const configDirectory = path.join(testDirectory, "config");
-    const skillsDirectory = path.join(configDirectory, "skills");
+    const sourceDirectory = path.join(testDirectory, "shared-skills");
+    const skillFile = path.join(sourceDirectory, "linked-skill", "SKILL.md");
     const temporaryDirectory = path.join(testDirectory, "temporary");
-    await fs.mkdir(skillsDirectory, { recursive: true });
+    await fs.mkdir(path.dirname(skillFile), { recursive: true });
+    await fs.mkdir(configDirectory);
     await fs.mkdir(temporaryDirectory);
-    const linkDirectory = vi.fn(async (target: string, linkPath: string) => {
-      await fs.cp(target, linkPath, { recursive: true });
-    });
+    await fs.writeFile(skillFile, "# Linked skill\n", "utf8");
+    await fs.symlink(sourceDirectory, path.join(configDirectory, "skills"), "dir");
+
     const bridge = new GlobalSkillsPluginBridge(configDirectory, logger, {
       temporaryDirectory,
-      platform: "win32",
-      linkDirectory,
     });
+    const plugin = await bridge.initialize();
+    const pluginSkillFile = path.join(plugin!.path, "skills", "linked-skill", "SKILL.md");
 
-    await bridge.initialize();
+    await expect(fs.readFile(pluginSkillFile, "utf8")).resolves.toBe("# Linked skill\n");
+    await expect(fs.realpath(pluginSkillFile)).resolves.not.toBe(await fs.realpath(skillFile));
 
-    expect(linkDirectory).toHaveBeenCalledWith(
-      path.resolve(skillsDirectory),
-      expect.any(String),
-      "junction",
-    );
     await bridge.dispose();
   });
 });

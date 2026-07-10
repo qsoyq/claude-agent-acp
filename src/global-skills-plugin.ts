@@ -11,8 +11,6 @@ type BridgeLogger = {
 };
 
 export type GlobalSkillsPluginBridgeOptions = {
-  linkDirectory?: (target: string, linkPath: string, type: "dir" | "junction") => Promise<void>;
-  platform?: typeof process.platform;
   temporaryDirectory?: string;
 };
 
@@ -52,8 +50,6 @@ export function mergeGlobalSkillsPlugin(
 
 export class GlobalSkillsPluginBridge {
   private readonly skillsDirectory: string;
-  private readonly linkDirectory: NonNullable<GlobalSkillsPluginBridgeOptions["linkDirectory"]>;
-  private readonly platform: typeof process.platform;
   private readonly temporaryDirectory: string;
   private pluginPromise?: Promise<SdkPluginConfig | undefined>;
   private disposed = false;
@@ -64,8 +60,6 @@ export class GlobalSkillsPluginBridge {
     options: GlobalSkillsPluginBridgeOptions = {},
   ) {
     this.skillsDirectory = path.resolve(claudeConfigDirectory, "skills");
-    this.linkDirectory = options.linkDirectory ?? fs.symlink;
-    this.platform = options.platform ?? process.platform;
     this.temporaryDirectory = options.temporaryDirectory ?? os.tmpdir();
   }
 
@@ -129,23 +123,15 @@ export class GlobalSkillsPluginBridge {
       );
 
       const pluginSkillsDirectory = path.join(pluginDirectory, "skills");
-      try {
-        await this.linkDirectory(
-          this.skillsDirectory,
-          pluginSkillsDirectory,
-          this.platform === "win32" ? "junction" : "dir",
-        );
-      } catch (error) {
-        this.logger.error(
-          `Failed to link global skills into the temporary plugin; using a startup snapshot instead: ${describeError(error)}`,
-        );
-        await fs.rm(pluginSkillsDirectory, { recursive: true, force: true });
-        await fs.cp(this.skillsDirectory, pluginSkillsDirectory, {
-          recursive: true,
-          errorOnExist: true,
-          force: false,
-        });
-      }
+      // Claude Code realpath-deduplicates plugin skills against user skills.
+      // A symlink back to the global directory is therefore discarded before
+      // the plugin path can bypass user-scope model-provider restrictions.
+      await fs.cp(this.skillsDirectory, pluginSkillsDirectory, {
+        recursive: true,
+        dereference: true,
+        errorOnExist: true,
+        force: false,
+      });
 
       return {
         type: "local",
