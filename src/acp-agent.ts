@@ -114,6 +114,7 @@ import {
   toolUpdateFromToolResult,
 } from "./tools.js";
 import { nodeToWebReadable, nodeToWebWritable, Pushable, unreachable } from "./utils.js";
+import { GlobalSkillsPluginBridge, mergeGlobalSkillsPlugin } from "./global-skills-plugin.js";
 
 export const CLAUDE_CONFIG_DIR =
   process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
@@ -753,6 +754,7 @@ export class ClaudeAcpAgent {
   client: AcpClient;
   clientCapabilities?: ClientCapabilities;
   logger: Logger;
+  private readonly globalSkillsPluginBridge: GlobalSkillsPluginBridge;
   gatewayAuthRequest?: GatewayAuthRequest;
   /** Grace period before a `session/cancel` forces a wedged prompt loop to
    *  return "cancelled". See {@link DEFAULT_FORCE_CANCEL_GRACE_MS}. Mutable so
@@ -763,10 +765,12 @@ export class ClaudeAcpAgent {
     this.sessions = {};
     this.client = client;
     this.logger = logger ?? console;
+    this.globalSkillsPluginBridge = new GlobalSkillsPluginBridge(CLAUDE_CONFIG_DIR, this.logger);
   }
 
   async initialize(request: InitializeRequest): Promise<InitializeResponse> {
     this.clientCapabilities = request.clientCapabilities;
+    await this.globalSkillsPluginBridge.initialize();
 
     // Bypasses standard auth by routing requests through a custom Anthropic-protocol gateway.
     // Only offered when the client advertises `auth._meta.gateway` capability.
@@ -2599,6 +2603,7 @@ export class ClaudeAcpAgent {
   /** Tear down all active sessions. Called when the ACP connection closes. */
   async dispose(): Promise<void> {
     await Promise.all(Object.keys(this.sessions).map((id) => this.teardownSession(id)));
+    await this.globalSkillsPluginBridge.dispose();
   }
 
   async closeSession(params: CloseSessionRequest): Promise<CloseSessionResponse> {
@@ -3550,6 +3555,7 @@ export class ClaudeAcpAgent {
     // failure only surfaces later as a confusing "native binary failed to
     // launch" error from the SDK (see issue #749).
     await this.validateCwd(params.cwd);
+    const globalSkillsPlugin = await this.globalSkillsPluginBridge.initialize();
 
     // We want to create a new session id unless it is resume,
     // but not resume + forkSession.
@@ -3685,6 +3691,7 @@ export class ClaudeAcpAgent {
       cwd: params.cwd,
       includePartialMessages: true,
       mcpServers: { ...(userProvidedOptions?.mcpServers || {}), ...mcpServers },
+      plugins: mergeGlobalSkillsPlugin(userProvidedOptions?.plugins, globalSkillsPlugin),
       // If we want bypassPermissions to be an option, we have to allow it here.
       // But it doesn't work in root mode, so we only activate it if it will work.
       allowDangerouslySkipPermissions: ALLOW_BYPASS,
